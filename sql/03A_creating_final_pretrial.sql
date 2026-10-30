@@ -1,11 +1,33 @@
 --03A_creating_final_pretrial
 --Creating final pretrial table for looker
 CREATE OR REPLACE TABLE `connecticut.pretrial_final` AS
-WITH stays AS (
-  --Create unique identifier
-  SELECT CONCAT(identifier, '_', CAST(latest_admission_date AS STRING)) AS stay_id,
-  *
+WITH staywork1 AS (
+  SELECT *,
+         DENSE_RANK() OVER (ORDER BY download_date) AS download_date_rank
   FROM `connecticut.pretrial_cleaned`
+)
+, staywork2 AS (
+  SELECT *,
+         LAG(download_date_rank) OVER(PARTITION BY identifier ORDER BY download_date) AS prev_rank_per_person
+  FROM staywork1
+)
+, staywork3 AS (
+  SELECT *,
+         CASE WHEN prev_rank_per_person IS NULL THEN 1
+              WHEN download_date_rank - prev_rank_per_person > 1 THEN 1
+         ELSE 0 END AS new_stay_flag
+  FROM staywork2
+)
+, staywork4 AS (
+  SELECT *,
+         SUM(new_stay_flag) OVER (PARTITION BY identifier ORDER BY download_date) AS stay_number
+  FROM staywork3
+)
+, stays AS (
+  --Create unique identifier
+  SELECT CONCAT(identifier, '_', CAST(stay_number AS STRING)) AS stay_id,
+  *
+  FROM staywork4
 )
 , calculate1 AS (
   SELECT *,
@@ -64,7 +86,11 @@ WITH stays AS (
        CASE WHEN latest_admission_date < '2016-07-01' THEN 1
        ELSE 0 END AS admitted_before_data,
        CASE WHEN DATE_DIFF(download_date, latest_admission_date, DAY) >= 365 THEN 1
-       ELSE 0 END AS old_admission     
+       ELSE 0 END AS old_admission,
+       download_date_rank,
+       prev_rank_per_person,
+       new_stay_flag,
+       stay_number     
   FROM calculate1
 )
 , calculate3 AS (
@@ -103,10 +129,15 @@ FROM `connecticut.pretrial_final`;
 
 --Stay id check
 SELECT identifier,
-       latest_admission_date,
+       download_date,
+       download_date_rank,
+       prev_rank_per_person,
+       new_stay_flag,
+       stay_number,
        stay_id
 FROM `connecticut.pretrial_final`
-LIMIT 100;    
+ORDER BY identifier, download_date
+LIMIT 1000;    
 
 --last seen per stay check
 SELECT COUNT(DISTINCT stay_id) 
