@@ -4,7 +4,10 @@ SELECT * EXCEPT(download_date,
                 latest_snapshot_per_stay,
                 month_end_snapshot,
                 month_end_flag,
-                year_snapshot)
+                year_snapshot,
+                download_date_rank, 
+                prev_rank_per_person,
+                new_stay_flag)
 FROM `connecticut.pretrial_final`
 QUALIFY ROW_NUMBER() OVER (PARTITION BY stay_id ORDER BY download_date DESC) = 1;
 

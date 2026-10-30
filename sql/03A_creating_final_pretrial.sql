@@ -14,7 +14,7 @@ WITH staywork1 AS (
 , staywork3 AS (
   SELECT *,
          CASE WHEN prev_rank_per_person IS NULL THEN 1
-              WHEN download_date_rank - prev_rank_per_person > 1 THEN 1
+              WHEN download_date_rank - prev_rank_per_person > 2 THEN 1
          ELSE 0 END AS new_stay_flag
   FROM staywork2
 )
@@ -34,7 +34,8 @@ WITH staywork1 AS (
          --Dates per stay
          FIRST_VALUE(download_date) OVER (PARTITION BY stay_id ORDER BY download_date DESC) AS last_seen_per_stay,
          --Month snapshot
-         MAX(download_date) OVER (PARTITION BY DATE_TRUNC(download_date, MONTH)) AS month_end_snapshot
+         MAX(download_date) OVER (PARTITION BY DATE_TRUNC(download_date, MONTH)) AS month_end_snapshot,
+         MIN(download_date) OVER (PARTITION BY stay_id) AS first_seen_per_stay
   FROM stays
 )
 , calculate2 AS (
@@ -61,8 +62,9 @@ WITH staywork1 AS (
        ELSE 0 END AS month_end_flag,
 
        --Per stay
+       first_seen_per_stay,
        last_seen_per_stay,
-       DATE_DIFF(last_seen_per_stay, latest_admission_date, DAY) AS days_since_admission_per_stay,
+       DATE_DIFF(last_seen_per_stay, first_seen_per_stay, DAY) + 1 AS length_of_stay,
        CASE WHEN last_seen_per_stay < MAX(download_date) OVER () THEN 1
        ELSE 0 END AS released_per_stay_flag,
        
@@ -73,7 +75,7 @@ WITH staywork1 AS (
        EXTRACT(YEAR FROM month_end_snapshot) AS year_snapshot,
        
        --First admitted, Last seen
-       MIN(latest_admission_date) OVER (PARTITION BY identifier ORDER BY latest_admission_date) AS first_admitted_date,
+       MIN(download_date) OVER (PARTITION BY identifier) AS first_seen_date,
        FIRST_VALUE(download_date) OVER (PARTITION BY identifier ORDER BY download_date DESC) AS last_seen_date,
 
        --Policy flags
@@ -83,10 +85,8 @@ WITH staywork1 AS (
        ELSE 0 END AS court_violation_only,
        
        --Old data
-       CASE WHEN latest_admission_date < '2016-07-01' THEN 1
-       ELSE 0 END AS admitted_before_data,
-       CASE WHEN DATE_DIFF(download_date, latest_admission_date, DAY) >= 365 THEN 1
-       ELSE 0 END AS old_admission,
+       CASE WHEN first_seen_per_stay = MIN(download_date) OVER () THEN 1
+       ELSE 0 END AS started_before_data,
        download_date_rank,
        prev_rank_per_person,
        new_stay_flag,
@@ -95,31 +95,31 @@ WITH staywork1 AS (
 )
 , calculate3 AS (
   SELECT *,
-         CASE WHEN days_since_admission_per_stay < 183 THEN 'Under 6 months'
-              WHEN days_since_admission_per_stay < 366 THEN '6 months-1 year'
-              WHEN days_since_admission_per_stay < 1096 THEN '1-3 years'
-              WHEN days_since_admission_per_stay < 1826 THEN '3-5 years'
-              WHEN days_since_admission_per_stay < 3651 THEN '5-10 years'
-              WHEN days_since_admission_per_stay < 7301 THEN '10-20 years'
-              WHEN days_since_admission_per_stay > 7300 THEN '20+ years'
-         ELSE NULL END AS time_since_admission_per_stay_buckets,
+         CASE WHEN length_of_stay < 183 THEN 'Under 6 months'
+              WHEN length_of_stay < 366 THEN '6 months-1 year'
+              WHEN length_of_stay < 1096 THEN '1-3 years'
+              WHEN length_of_stay < 1826 THEN '3-5 years'
+              WHEN length_of_stay < 3651 THEN '5-10 years'
+              WHEN length_of_stay < 7301 THEN '10-20 years'
+              WHEN length_of_stay > 7300 THEN '20+ years'
+         ELSE NULL END AS length_of_stay_buckets,
          CASE WHEN last_seen_date < MAX(download_date) OVER () THEN 1
          ELSE 0 END AS released,
-         CASE WHEN latest_snapshot_per_stay = 1 AND download_date = MAX(download_date) OVER () THEN DATE_DIFF(download_date, latest_admission_date, DAY)
-         ELSE NULL END AS days_since_admission_not_released
+         CASE WHEN released_per_stay_flag = 0 THEN length_of_stay
+         ELSE NULL END AS length_of_stay_not_released
 FROM calculate2
 )
 SELECT *,
-       CASE WHEN days_since_admission_per_stay > 3650 THEN 1
+       CASE WHEN length_of_stay > 3650 THEN 1
        ELSE 0 END AS over_ten_year_stay,
-       CASE WHEN days_since_admission_not_released < 183 THEN 'Under 6 months'
-            WHEN days_since_admission_not_released < 366 THEN '6 months-1 year'
-            WHEN days_since_admission_not_released < 1096 THEN '1-3 years'
-            WHEN days_since_admission_not_released < 1826 THEN '3-5 years'
-            WHEN days_since_admission_not_released < 3651 THEN '5-10 years'
-            WHEN days_since_admission_not_released < 7301 THEN '10-20 years'
-            WHEN days_since_admission_not_released > 7300 THEN '20+ years'
-         ELSE NULL END AS time_since_admission_not_released
+       CASE WHEN length_of_stay_not_released < 183 THEN 'Under 6 months'
+            WHEN length_of_stay_not_released < 366 THEN '6 months-1 year'
+            WHEN length_of_stay_not_released < 1096 THEN '1-3 years'
+            WHEN length_of_stay_not_released < 1826 THEN '3-5 years'
+            WHEN length_of_stay_not_released < 3651 THEN '5-10 years'
+            WHEN length_of_stay_not_released < 7301 THEN '10-20 years'
+            WHEN length_of_stay_not_released > 7300 THEN '20+ years'
+         ELSE NULL END AS length_of_stay_not_released_buckets
 FROM calculate3;
 
 
@@ -278,5 +278,22 @@ SELECT DISTINCT stay_id,
        days_since_admission_not_released,
        time_since_admission_not_released
 FROM `connecticut.pretrial_final`
-WHERE download_date = '2026-10-26'
+WHERE download_date = '2026-10-26';
+
+--Breaks between stays
+SELECT
+  download_date_rank - prev_rank_per_person AS rank_gap,
+  COUNT(*) AS new_stays
+FROM `connecticut.pretrial_final`
+WHERE new_stay_flag = 1
+  AND prev_rank_per_person IS NOT NULL
+GROUP BY rank_gap
+ORDER BY rank_gap
+LIMIT 30;
+
+--Total stays
+SELECT
+  COUNT(DISTINCT stay_id) AS total_stays,
+  COUNT(DISTINCT identifier) AS total_people
+FROM `connecticut.pretrial_final`;
 
