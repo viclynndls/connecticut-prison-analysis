@@ -32,7 +32,7 @@ Two public datasets from the Connecticut Open Data Portal, each a daily snapshot
 
 | Dataset | Coverage | Grain |
 |---|---|---|
-| [Accused Pre-Trial Inmates in Correctional Facilities](https://catalog.data.gov/dataset/accused-pre-trial-inmates-in-correctional-facilities) | July 2016 – present | One row per person per day |
+| [Accused Pre-Trial Inmates in Correctional Facilities](https://data.ct.gov/Public-Safety/Accused-Pre-Trial-Inmates-in-Correctional-Faciliti/b674-jy6w/about_data) | July 2016 – present | One row per person per day |
 | [Sentenced Inmates in Correctional Facilities](https://data.ct.gov/Public-Safety/Sentenced-Inmates-in-Correctional-Facilities/um73-fxm4/about_data) | August 2017 – present | One row per person per day |
 
 Together the datasets contain more than 12 million rows. The raw data is not stored in this repository; it can be downloaded from the portal links above.
